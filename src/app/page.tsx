@@ -34,6 +34,12 @@ export default function Page() {
     const weekNum = Math.floor(diffInDays / 7) + 1;
     return `Minggu ${weekNum > 0 ? weekNum : 1}`;
   });
+  // Reimburse State
+  const [isReimburseModalOpen, setIsReimburseModalOpen] = useState(false);
+  const [reimburseData, setReimburseData] = useState({ keterangan: '', jumlah: 0 });
+  const [isReimburseSubmitting, setIsReimburseSubmitting] = useState(false);
+  const [pendingReimbursements, setPendingReimbursements] = useState<any[]>([]);
+
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [expenseData, setExpenseData] = useState({ kategori: 'Operasional', keterangan: '', jumlah: 0 });
   const [isExpenseSubmitting, setIsExpenseSubmitting] = useState(false);
@@ -109,17 +115,61 @@ export default function Page() {
       if (res.ok) setMgmtStats(await res.json());
     } catch (error) { console.error(error); }
   };
-  
+
+  // Tarik data request yang masih PENDING buat Management
+  const fetchPendingReimbursements = async () => {
+    try {
+      const res = await fetch('/api/management/reimburse');
+      if (res.ok) setPendingReimbursements(await res.json());
+    } catch (error) { console.error("Gagal tarik data reimburse"); }
+  };
+
+  // Fungsi Supervisor untuk kirim Request
+  const submitReimburseRequest = async () => {
+    if (reimburseData.jumlah <= 0 || !reimburseData.keterangan) return alert("Keterangan dan nominal (Min $1) wajib diisi!");
+    setIsReimburseSubmitting(true);
+    try {
+      const res = await fetch('/api/management/reimburse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'request', userName: userNamaRP, ...reimburseData })
+      });
+      if (res.ok) {
+        setIsReimburseModalOpen(false);
+        setReimburseData({ keterangan: '', jumlah: 0 });
+        alert("✅ Request Reimburse telah dikirim! ");
+      } else alert("❌ Gagal mengirim request.");
+    } catch (error) { alert("Error menghubungi server!"); }
+    setIsReimburseSubmitting(false);
+  };
+
+  // Fungsi Management untuk ACC/TOLAK
+  const handleReimburseAction = async (row: any, actionType: 'acc' | 'tolak') => {
+    if (!confirm(`Yakin mau ${actionType.toUpperCase()} reimburse dari ${row.nama}?`)) return;
+    try {
+      const res = await fetch('/api/management/reimburse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: actionType, rowNumber: row.rowNumber, waktu: row.waktu, minggu: row.minggu, userName: row.nama, keterangan: row.keterangan, jumlah: row.jumlah })
+      });
+      if (res.ok) {
+        alert(`✅ Reimburse berhasil di-${actionType.toUpperCase()}`);
+        fetchPendingReimbursements(); // Refresh daftar otomatis
+        fetchMgmtStats(); // Refresh brankas kalau di-ACC
+      }
+    } catch (error) { alert("❌ Gagal memproses ACC/TOLAK"); }
+  };
+
   useEffect(() => {
     if (session) {
       fetchInventory();
-      // Sekarang kita izinkan SEMUA role untuk menarik data ini
-      // Biar staf bisa memfilter namanya sendiri dari daftar Leaderboard
-      fetchMgmtStats(); 
+      fetchMgmtStats();
+      if ((session.user as any).role === 'management') {
+        fetchPendingReimbursements();
+      }
     }
   }, [session, selectedWeek]);
-
-
+  
   const formatTime = (s: number) => {
     const hrs = Math.floor(s / 3600);
     const mins = Math.floor((s % 3600) / 60);
@@ -377,6 +427,12 @@ export default function Page() {
                   {isSendingWebhook ? 'Mengirim...' : '📢 Kirim Laporan'}
                 </button>
               )}
+              {/* Tombol Ajukan Reimburse Untuk Semua Staff */}
+              {['staff', 'supervisor', 'management'].includes(userRole) && (
+                <button onClick={() => setIsReimburseModalOpen(true)} className="px-8 py-2.5 rounded-xl font-bold text-xs transition bg-blue-600 hover:bg-blue-500 text-white uppercase tracking-widest shadow-lg">
+                  🧾 Ajukan Reimburse
+                </button>
+              )}
             </div>
             <div className="flex items-center bg-cardBg border border-gray-800 rounded-xl px-5 py-2.5 shadow-inner">
                <span className="text-[10px] text-gray-500 font-bold mr-4 tracking-[0.2em] uppercase">Work Timer</span>
@@ -478,6 +534,35 @@ export default function Page() {
                 </div>
               </div>
 
+              {/* Tabel PENDING Reimbursement (Khusus Management) */}
+                <div className="bg-cardBg border border-blue-600/30 rounded-3xl overflow-hidden shadow-xl md:col-span-2 mt-4">
+                  <div className="p-4 border-b border-gray-800 bg-blue-900/20 flex justify-between items-center">
+                    <h3 className="font-black italic uppercase tracking-widest text-xs text-blue-400">🚨 Request Reimburse ({pendingReimbursements.length})</h3>
+                    <button onClick={fetchPendingReimbursements} className="text-[10px] bg-blue-600/20 text-blue-400 px-3 py-1 rounded-full hover:bg-blue-600/40 font-bold uppercase">Refresh Cek</button>
+                  </div>
+                  <div className="p-4 overflow-y-auto max-h-[300px]">
+                    {pendingReimbursements.length === 0 ? (
+                      <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest my-4">Brankas aman, tidak ada request tagihan.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {pendingReimbursements.map((req, idx) => (
+                          <li key={idx} className="bg-darkBg border border-gray-800 p-4 rounded-xl flex justify-between items-center shadow-inner">
+                            <div>
+                              <p className="text-xs font-bold uppercase text-gray-200">{req.nama} <span className="text-gray-500 text-[9px] ml-2 font-mono">{req.waktu}</span></p>
+                              <p className="text-[10px] text-blue-400 italic mb-1">"{req.keterangan}"</p>
+                              <p className="font-black text-sm text-yellow-500">$ {req.jumlah.toLocaleString('id-ID')}</p>
+                            </div>
+                            <div className="flex flex-col gap-2 md:flex-row">
+                              <button onClick={() => handleReimburseAction(req, 'acc')} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase transition">✔️ ACC</button>
+                              <button onClick={() => handleReimburseAction(req, 'tolak')} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase transition">❌ Tolak</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
             </div>
           )}
 
@@ -505,8 +590,8 @@ export default function Page() {
                         <span className={`text-[10px] px-3 py-1 rounded-full font-bold ${item.stock > 0 ? 'bg-burgundy/20 text-burgundy' : 'bg-red-900/30 text-red-500'}`}>{item.stock} QTY</span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => { setModalData({ item: item.name, action: 'ambil', maxStock: item.stock }); setQtyInput(1); setIsModalOpen(true); }} className="flex-1 bg-burgundy/80 py-2.5 rounded-xl font-bold text-[10px] uppercase">Withdraw</button>
-                        <button onClick={() => { setModalData({ item: item.name, action: 'taruh', maxStock: item.stock }); setQtyInput(1); setIsModalOpen(true); }} className="flex-1 bg-gray-800 py-2.5 rounded-xl font-bold text-[10px] uppercase">Deposit</button>
+                        <button onClick={() => { setModalData({ item: item.name, action: 'ambil', maxStock: item.stock }); setQtyInput(1); setIsModalOpen(true); }} className="flex-1 bg-burgundy/80 py-2.5 rounded-xl font-bold text-[10px] uppercase">Keluar</button>
+                        <button onClick={() => { setModalData({ item: item.name, action: 'taruh', maxStock: item.stock }); setQtyInput(1); setIsModalOpen(true); }} className="flex-1 bg-gray-800 py-2.5 rounded-xl font-bold text-[10px] uppercase">Masuk</button>
                       </div>
                     </div>
                   ))}
@@ -674,6 +759,25 @@ export default function Page() {
                 className={`flex-1 py-3.5 rounded-xl font-bold text-[10px] uppercase transition-all ${isExpenseSubmitting ? 'bg-red-900 text-gray-400 cursor-wait' : 'bg-red-600 text-white hover:bg-red-500'}`}
               >
                 {isExpenseSubmitting ? 'Mencatat...' : 'Konfirmasi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REIMBURSE (SUPERVISOR) */}
+      {isReimburseModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-cardBg border border-blue-600/50 rounded-3xl p-8 w-full max-w-sm shadow-[0_0_50px_rgba(37,99,235,0.15)]">
+            <h2 className="text-xl font-black italic mb-6 uppercase text-center text-blue-500 tracking-widest">Ajukan Reimburse</h2>
+            <div className="space-y-4 mb-8">
+              <input type="text" placeholder="Masukan Detail Pengeluaran" value={reimburseData.keterangan} onChange={(e) => setReimburseData({...reimburseData, keterangan: e.target.value})} className="bg-darkBg border border-gray-700 rounded-xl p-3 w-full font-bold text-sm outline-none" />
+              <input type="number" placeholder="Nominal ($)" value={reimburseData.jumlah} onChange={(e) => setReimburseData({...reimburseData, jumlah: parseInt(e.target.value) || 0})} className="bg-darkBg border border-gray-700 rounded-xl p-3 w-full text-center text-xl font-black outline-none" />
+            </div>
+            <div className="flex gap-4">
+              <button onClick={() => setIsReimburseModalOpen(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 py-3.5 rounded-xl font-bold text-[10px] uppercase transition">Batal</button>
+              <button onClick={submitReimburseRequest} disabled={isReimburseSubmitting} className={`flex-1 py-3.5 rounded-xl font-bold text-[10px] uppercase transition ${isReimburseSubmitting ? 'bg-blue-900 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+                {isReimburseSubmitting ? 'Loading...' : 'Kirim'}
               </button>
             </div>
           </div>
