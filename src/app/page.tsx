@@ -542,7 +542,7 @@ export default function Page() {
                   </div>
                   <div className="p-4 overflow-y-auto max-h-[300px]">
                     {pendingReimbursements.length === 0 ? (
-                      <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest my-4">Brankas aman, tidak ada request tagihan.</p>
+                      <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest my-4">Tidak ada request tagihan.</p>
                     ) : (
                       <ul className="space-y-3">
                         {pendingReimbursements.map((req, idx) => (
