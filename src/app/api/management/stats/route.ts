@@ -18,6 +18,7 @@ export async function GET(req: Request) {
     const sheets = await initSheets();
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
 
+    // AMBIL 3 TAB (Sales, Expense, Absensi)
     const [salesRes, expenseRes, absensiRes] = await Promise.all([
       sheets.spreadsheets.values.get({ spreadsheetId, range: 'Log_Penjualan!A2:G' }),
       sheets.spreadsheets.values.get({ spreadsheetId, range: 'Log_Pengeluaran!A2:F' }),
@@ -28,14 +29,16 @@ export async function GET(req: Request) {
     const expenseRows = expenseRes.data.values || [];
     const absensiRows = absensiRes.data.values || [];
 
-    // --- HITUNG TOTAL KAS GLOBAL ---
+    // --- 1. HITUNG KAS GLOBAL (SEPANJANG MASA) ---
     let globalBruto = 0;
     salesRows.forEach(row => globalBruto += (parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0));
     let globalExpense = 0;
     expenseRows.forEach(row => globalExpense += (parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0));
+    
+    // Rumus lama Bos: Duit Klub (80%) dikurangi semua pengeluaran
     const totalKasGlobal = (globalBruto * 0.8) - globalExpense;
 
-    // --- STATE UNTUK FILTER MINGGUAN ---
+    // --- 2. INITIALIZE DATA MINGGUAN ---
     let weekBruto = 0;
     let weekModal = 0;
     let weekExpense = 0;
@@ -43,32 +46,30 @@ export async function GET(req: Request) {
     const itemSalesStats: any = {};
     const expensesList: any[] = [];
 
-    // --- PROSES ABSENSI ---
+    // --- 3. PROSES ABSENSI (JAM KERJA) ---
     absensiRows.forEach(row => {
-      const week = row[1];
-      const name = row[2];
-      const durationStr = row[5] || "0"; 
-      const hours = parseFloat(durationStr.replace(" Jam", "")) || 0;
-
-      if (week === targetWeek) {
+      if (row[1] === targetWeek) {
+        const name = row[2];
+        const hours = parseFloat((row[5] || "0").replace(" Jam", "")) || 0;
         if (!staffStats[name]) staffStats[name] = { name, totalSales: 0, totalHours: 0 };
         staffStats[name].totalHours += hours;
       }
     });
 
-    // --- PROSES PENJUALAN & ITEM TERLARIS ---
+    // --- 4. PROSES PENJUALAN ---
     salesRows.forEach(row => {
       if (row[1] === targetWeek) {
         const name = row[2];
         const item = row[3];
         const qty = parseInt(row[4]) || 0;
         const amount = parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0;
-        const modal = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0; // Baca Kolom G
+        const modal = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;
 
         weekBruto += amount;
         weekModal += modal;
 
-        if (staffStats[name]) staffStats[name].totalSales += amount;
+        if (!staffStats[name]) staffStats[name] = { name, totalSales: 0, totalHours: 0 };
+        staffStats[name].totalSales += amount;
 
         if (!itemSalesStats[item]) itemSalesStats[item] = { name: item, qty: 0, total: 0 };
         itemSalesStats[item].qty += qty;
@@ -76,25 +77,30 @@ export async function GET(req: Request) {
       }
     });
 
-    // --- PROSES PENGELUARAN ---
+    // --- 5. PROSES PENGELUARAN ---
     expenseRows.forEach(row => {
       if (row[1] === targetWeek) {
-        const date = row[0];
-        const pic = row[2];
-        const kategori = row[3];
-        const keterangan = row[4];
         const amount = parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0;
-
         weekExpense += amount;
-        expensesList.push({ date, pic, kategori, keterangan, amount });
+        expensesList.push({ 
+          date: row[0], week: row[1], pic: row[2], 
+          kategori: row[3], keterangan: row[4], amount 
+        });
       }
     });
 
+    // --- 6. KALKULASI AKHIR ---
     const setoran20 = weekBruto * 0.2; 
     const netProfit = (weekBruto * 0.8) - weekExpense;
 
+    // --- 7. RETURN DATA (GABUNGAN LAMA + BARU) ---
     return NextResponse.json({
-      totalKasGlobal,
+      // Data untuk Audit Galak (BARU)
+      totalSalesGlobal: weekBruto,
+      totalExpenseGlobal: weekExpense,
+      totalKasGlobal: totalKasGlobal, // Ini saldo riil hasil hitungan rumus 80%
+      
+      // Data untuk StatCards (LAMA)
       finance: {
         bruto: weekBruto,
         modal: weekModal,
@@ -102,11 +108,15 @@ export async function GET(req: Request) {
         setoran: setoran20,
         net: netProfit
       },
+      
+      // Data untuk Table & Chart (LAMA)
       leaderboard: Object.values(staffStats).sort((a: any, b: any) => b.totalSales - a.totalSales),
       itemSales: Object.values(itemSalesStats).sort((a: any, b: any) => b.qty - a.qty),
-      expensesList: expensesList.reverse() // Dibalik agar yang terbaru di atas
+      expensesList: expensesList.reverse()
     });
+    
   } catch (error) {
+    console.error("STATS_ERROR:", error);
     return NextResponse.json({ error: "Gagal memproses data" }, { status: 500 });
   }
 }

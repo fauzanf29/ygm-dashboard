@@ -31,8 +31,9 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < rows.length; i++) {
       if (rows[i][0] === itemName) {
-        hargaSatuan = parseInt(rows[i][4]) || 0; // Kolom E (Harga Jual)
-        hargaModalSatuan = parseInt(rows[i][5]) || 0; // Kolom F (Harga Modal)
+        // [UPDATE]: Ditambahin .replace biar kebal sama format titik/dolar di Google Sheets
+        hargaSatuan = parseInt(rows[i][4]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom E (Harga Jual)
+        hargaModalSatuan = parseInt(rows[i][5]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom F (Harga Modal)
         break;
       }
     }
@@ -51,22 +52,58 @@ export async function POST(req: Request) {
     const nowMs = now.getTime();
     const diffInDays = Math.floor((nowMs - epoch) / (1000 * 60 * 60 * 24));
     const weekNumber = Math.floor(diffInDays / 7) + 1;
+    const weekStr = `Minggu ${weekNumber > 0 ? weekNumber : 1}`;
 
-
-
-    // 3. Catat ke Log_Penjualan (Sampai Kolom G)
+    // 3. Catat ke Log_Penjualan (Kodingan Lama Bos)
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: 'Log_Penjualan!A:G',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         // [Waktu, Minggu, Nama, Item, Qty, Total Pendapatan, Total Modal]
-        values: [[timeStr, `Minggu ${weekNumber}`, userName, itemName, qty, totalHarga, totalModal]],
+        values: [[timeStr, weekStr, userName, itemName, qty, totalHarga, totalModal]],
       },
     });
 
+    // ==========================================
+    // 4. FITUR BARU: RADAR KANTONG (Update Tab Mutasi_Stok)
+    // ==========================================
+    const mutasiRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Mutasi_Stok!A2:H' });
+    const mutasiRows = mutasiRes.data.values || [];
+
+    let targetRowIndex = -1;
+    let currentTerjual = 0;
+    let currentSisa = 0;
+
+    // Cari histori staf ini dari bawah ke atas (cari yang belum disetor / "Keliling")
+    for (let i = mutasiRows.length - 1; i >= 0; i--) {
+      const row = mutasiRows[i];
+      if (row[2] === userName && row[3] === itemName && row[7] === "Keliling") {
+        targetRowIndex = i;
+        currentTerjual = parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom F (Terjual)
+        currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;    // Kolom G (Sisa)
+        break;
+      }
+    }
+
+    if (targetRowIndex !== -1) {
+      // Kalkulasi update kantong staf
+      const newTerjual = currentTerjual + qty;
+      const newSisa = Math.max(0, currentSisa - qty); // Biar sisa kantong ga jadi minus
+      const newStatus = newSisa === 0 ? "Selesai" : "Keliling";
+
+      // Timpa angka lama di Sheet Mutasi_Stok
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `Mutasi_Stok!F${targetRowIndex + 2}:H${targetRowIndex + 2}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [[newTerjual, newSisa, newStatus]] }
+      });
+    }
+
     return NextResponse.json({ message: "Sukses", totalHarga });
   } catch (error) {
+    console.error("API_KASIR_ERROR:", error);
     return NextResponse.json({ error: "Gagal mencatat penjualan" }, { status: 500 });
   }
 }

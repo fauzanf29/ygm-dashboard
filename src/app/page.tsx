@@ -15,6 +15,8 @@ import RestockForm from './components/RestockForm';
 import ReimbursePanel from './components/ReimbursePanel';
 import StaffPanel from './components/StaffPanel';
 import AllModals from './components/AllModals';
+import FinanceAudit from './components/FinanceAudit';
+import PocketMonitor from './components/PocketMonitor';
 
 export default function Page() {
   // ==========================================
@@ -159,8 +161,10 @@ export default function Page() {
         {userRole === 'management' && (
           <div className="space-y-8">
             <StatCards mgmtStats={mgmtStats} />
+            <LogsPanel mgmtStats={mgmtStats} />
             <Leaderboard mgmtStats={mgmtStats} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
             <ReimbursePanel pendingReimbursements={pendingReimbursements} fetchPendingReimbursements={fetchPendingReimbursements} handleReimburseAction={handleReimburseAction} />
+            <FinanceAudit mgmtStats={mgmtStats} inventory={inventory} />
           </div>
         )}
 
@@ -183,13 +187,14 @@ export default function Page() {
         {/* --- PANEL AUDIT STOK (BOS & SPV BISA LIHAT) --- */}
         {(userRole === 'management' || userRole === 'supervisor') && (
           <div className="space-y-8">
+            <PocketMonitor />
             <StockBalance inventory={inventory} mgmtStats={mgmtStats} />
-            <LogsPanel mgmtStats={mgmtStats} />
             <RestockForm currentWeek={selectedWeek} spvName={userNamaRP} inventory={inventory} />
           </div>
         )}
 
         {/* --- PANEL STAFF (SEMUA BISA LIHAT) --- */}
+        <PocketMonitor userName={userNamaRP} />
         <StaffPanel 
             isCheckedIn={isCheckedIn} 
             userRole={userRole} 
@@ -202,8 +207,9 @@ export default function Page() {
             todayItems={todayItems} 
             time={formatTime(seconds)} 
         />
+        
       </main>
-
+        
       {/* POP-UP MODALS */}
       <AllModals 
           isModalOpen={isModalOpen} setIsModalOpen={setIsModalOpen} modalData={modalData} qtyInput={qtyInput} setQtyInput={setQtyInput} submitTransaction={submitTransaction} isSubmitting={isSubmitting} 
@@ -213,6 +219,7 @@ export default function Page() {
           isExpenseModalOpen={isExpenseModalOpen} setIsExpenseModalOpen={setIsExpenseModalOpen} expenseData={expenseData} setExpenseData={setExpenseData} submitExpense={submitExpense} isExpenseSubmitting={isExpenseSubmitting} 
           isReimburseModalOpen={isReimburseModalOpen} setIsReimburseModalOpen={setIsReimburseModalOpen} reimburseData={reimburseData} setReimburseData={setReimburseData} submitReimburseRequest={submitReimburseRequest} isReimburseSubmitting={isReimburseSubmitting} 
       />
+      
     </div>
   );
 }
