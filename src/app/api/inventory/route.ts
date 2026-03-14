@@ -15,7 +15,7 @@ export async function GET() {
     const sheets = await initSheets();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: 'Inventory!A2:E',
+      range: 'Inventory!A2:F',
     });
     
     const rows = response.data.values || [];
