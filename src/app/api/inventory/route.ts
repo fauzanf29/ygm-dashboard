@@ -10,7 +10,6 @@ async function initSheets() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// Fungsi buat nentuin Minggu Ke-Berapa (Otomatis)
 function getCurrentWeek() {
   const diffInDays = Math.floor((Date.now() - new Date('2026-01-24T00:00:00+07:00').getTime()) / (1000 * 60 * 60 * 24));
   const weekNum = Math.floor(diffInDays / 7) + 1;
@@ -22,15 +21,15 @@ export async function GET() {
     const sheets = await initSheets();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: 'Inventory!A2:F', // Baca sampai Kolom F sesuai Sheet Bos
+      range: 'Inventory!A2:F',
     });
     
     const rows = response.data.values || [];
     const items = rows.map(row => ({
       name: row[0],
       stock: parseInt(row[1]?.toString().replace(/[^0-9]/g, "")) || 0,
-      price: parseInt(row[4]?.toString().replace(/[^0-9]/g, "")) || 0, // Harga di Kolom E (Index 4)
-      modal: parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0, // Modal di Kolom F (Index 5)
+      price: parseInt(row[4]?.toString().replace(/[^0-9]/g, "")) || 0,
+      modal: parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0,
     }));
     
     return NextResponse.json(items);
@@ -84,11 +83,11 @@ export async function POST(req: Request) {
     const week = getCurrentWeek();
 
     // ==========================================
-    // 3. FITUR LAMA: Update Tab Inventory & Catat di Log_Inventory
+    // 3. Update Tab Inventory & Catat di Log_Inventory
     // ==========================================
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Inventory!B${rowIndex}:D${rowIndex}`, // Update Stok, Jam, dan Nama
+      range: `Inventory!B${rowIndex}:D${rowIndex}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [[newStock, timeStr, userName]] },
     });
@@ -103,50 +102,58 @@ export async function POST(req: Request) {
     });
 
     // ==========================================
-    // 4. FITUR BARU: RADAR KANTONG (Mutasi_Stok)
+    // 4. JURUS POTONG BERANTAI (Mutasi_Stok)
     // ==========================================
     if (action === 'ambil') {
+      // Kalau ambil, tambahin baris baru kayak biasa
       await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: 'Mutasi_Stok!A:H',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
-          values: [[
-            timeStr, week, userName, itemName, 
-            qty, // Jumlah Ambil
-            0,   // Terjual awal pasti 0
-            qty, // Sisa Kantong
-            "Keliling" // Status
-          ]]
+          values: [[timeStr, week, userName, itemName, qty, 0, qty, "Keliling"]]
         }
       });
     } else if (action === 'taruh') {
-      // Cari histori ngambil terakhir staf ini yang belum "Selesai"
+      // Kalau taruh, bayar utang berantai (LIFO - dari yang paling baru diambil)
       const mutasiRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Mutasi_Stok!A2:H' });
       const mutasiRows = mutasiRes.data.values || [];
       
-      let targetRowIndex = -1;
-      let currentSisa = 0;
+      let remainingDeduct = qty; // Jumlah botol yang mau ditaruh balik
+      const updates = [];
 
+      // Cari dari baris bawah (terbaru) ke atas
       for (let i = mutasiRows.length - 1; i >= 0; i--) {
+        if (remainingDeduct <= 0) break; // Kalau udah lunas, stop nyari
+
         const row = mutasiRows[i];
         if (row[2] === userName && row[3] === itemName && row[7] === "Keliling") {
-          targetRowIndex = i;
-          currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;
-          break; 
+          let currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;
+
+          if (currentSisa > 0) {
+            let potong = Math.min(currentSisa, remainingDeduct);
+            let newSisa = currentSisa - potong;
+            let newStatus = newSisa === 0 ? "Selesai" : "Keliling";
+
+            // Simpan perubahan ke memori dulu
+            updates.push({
+              range: `Mutasi_Stok!G${i + 2}:H${i + 2}`, // Cuma update Kolom G (Sisa) & H (Status)
+              values: [[newSisa, newStatus]]
+            });
+
+            remainingDeduct -= potong;
+          }
         }
       }
 
-      // Potong sisa di kantong
-      if (targetRowIndex !== -1) {
-        const newSisa = Math.max(0, currentSisa - qty);
-        const newStatus = newSisa === 0 ? "Selesai" : "Keliling";
-
-        await sheets.spreadsheets.values.update({
+      // Tembak perubahannya ke Sheets sekaligus
+      if (updates.length > 0) {
+        await sheets.spreadsheets.values.batchUpdate({
           spreadsheetId,
-          range: `Mutasi_Stok!G${targetRowIndex + 2}:H${targetRowIndex + 2}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[newSisa, newStatus]] }
+          requestBody: {
+            valueInputOption: 'USER_ENTERED',
+            data: updates
+          }
         });
       }
     }

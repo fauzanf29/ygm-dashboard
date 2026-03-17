@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     const sheets = await initSheets();
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
 
-    // 1. Cek Harga Jual & Harga Modal di Inventory (Kolom A sampai F)
+    // 1. Cek Harga Jual & Harga Modal
     const invRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Inventory!A:F',
@@ -31,9 +31,8 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < rows.length; i++) {
       if (rows[i][0] === itemName) {
-        // [UPDATE]: Ditambahin .replace biar kebal sama format titik/dolar di Google Sheets
-        hargaSatuan = parseInt(rows[i][4]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom E (Harga Jual)
-        hargaModalSatuan = parseInt(rows[i][5]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom F (Harga Modal)
+        hargaSatuan = parseInt(rows[i][4]?.toString().replace(/[^0-9]/g, "")) || 0;
+        hargaModalSatuan = parseInt(rows[i][5]?.toString().replace(/[^0-9]/g, "")) || 0;
         break;
       }
     }
@@ -41,7 +40,6 @@ export async function POST(req: Request) {
     if (hargaSatuan === 0) return NextResponse.json({ error: "Harga jual belum disetting di Kolom E!" }, { status: 400 });
     if (hargaModalSatuan === 0) return NextResponse.json({ error: "Harga modal belum disetting di Kolom F!" }, { status: 400 });
 
-    // 2. Hitung Total Pendapatan & Total Modal
     const totalHarga = hargaSatuan * qty;
     const totalModal = hargaModalSatuan * qty;
     
@@ -54,50 +52,61 @@ export async function POST(req: Request) {
     const weekNumber = Math.floor(diffInDays / 7) + 1;
     const weekStr = `Minggu ${weekNumber > 0 ? weekNumber : 1}`;
 
-    // 3. Catat ke Log_Penjualan (Kodingan Lama Bos)
+    // 2. Catat ke Log_Penjualan
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: 'Log_Penjualan!A:G',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        // [Waktu, Minggu, Nama, Item, Qty, Total Pendapatan, Total Modal]
         values: [[timeStr, weekStr, userName, itemName, qty, totalHarga, totalModal]],
       },
     });
 
     // ==========================================
-    // 4. FITUR BARU: RADAR KANTONG (Update Tab Mutasi_Stok)
+    // 3. JURUS POTONG BERANTAI (Mutasi_Stok)
     // ==========================================
     const mutasiRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Mutasi_Stok!A2:H' });
     const mutasiRows = mutasiRes.data.values || [];
 
-    let targetRowIndex = -1;
-    let currentTerjual = 0;
-    let currentSisa = 0;
+    let remainingDeduct = qty; // Sisa botol yang harus dipotong dari kantong
+    const updates = [];
 
-    // Cari histori staf ini dari bawah ke atas (cari yang belum disetor / "Keliling")
-    for (let i = mutasiRows.length - 1; i >= 0; i--) {
+    // Cari histori dari baris atas (lama) ke bawah (baru) - FIFO System
+    for (let i = 0; i < mutasiRows.length; i++) {
+      if (remainingDeduct <= 0) break; // Kalau udah lunas kepotong semua, stop nyari.
+
       const row = mutasiRows[i];
       if (row[2] === userName && row[3] === itemName && row[7] === "Keliling") {
-        targetRowIndex = i;
-        currentTerjual = parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0; // Kolom F (Terjual)
-        currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;    // Kolom G (Sisa)
-        break;
+        let currentTerjual = parseInt(row[5]?.toString().replace(/[^0-9]/g, "")) || 0;
+        let currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;
+
+        if (currentSisa > 0) {
+          // Potong sesuai sisa botol di baris itu
+          let potong = Math.min(currentSisa, remainingDeduct);
+          let newTerjual = currentTerjual + potong;
+          let newSisa = currentSisa - potong;
+          let newStatus = newSisa === 0 ? "Selesai" : "Keliling";
+
+          // Simpan instruksi perubahannya
+          updates.push({
+            range: `Mutasi_Stok!F${i + 2}:H${i + 2}`,
+            values: [[newTerjual, newSisa, newStatus]]
+          });
+
+          // Kurangi total utang botol yang lagi dicari
+          remainingDeduct -= potong;
+        }
       }
     }
 
-    if (targetRowIndex !== -1) {
-      // Kalkulasi update kantong staf
-      const newTerjual = currentTerjual + qty;
-      const newSisa = Math.max(0, currentSisa - qty); // Biar sisa kantong ga jadi minus
-      const newStatus = newSisa === 0 ? "Selesai" : "Keliling";
-
-      // Timpa angka lama di Sheet Mutasi_Stok
-      await sheets.spreadsheets.values.update({
+    // Eksekusi semua potongan secara massal (Batch Update) biar cepet & hemat kuota
+    if (updates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,
-        range: `Mutasi_Stok!F${targetRowIndex + 2}:H${targetRowIndex + 2}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [[newTerjual, newSisa, newStatus]] }
+        requestBody: {
+          valueInputOption: 'USER_ENTERED',
+          data: updates
+        }
       });
     }
 

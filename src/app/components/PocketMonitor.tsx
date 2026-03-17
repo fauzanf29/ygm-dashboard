@@ -10,27 +10,17 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
   const [activePockets, setActivePockets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // State baru buat nyimpen nama petinggi HANYA SEKALI
   const [petinggiNames, setPetinggiNames] = useState<string[]>([]);
 
-  // ==========================================
-  // 🚨 DAFTAR JABATAN VIP (SEKARANG BEBAS HURUF BESAR/KECIL)
-  // ==========================================
   const vipRoles = ["management", "bos", "manager", "owner", "wakil"]; 
 
-  // ==========================================
-  // 1. TARIK DATA JABATAN (JALAN 1 KALI SAJA PAS WEB DIBUKA)
-  // ==========================================
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         const res = await fetch('/api/users');
         if (res.ok) {
           const usersData = await res.json();
-          
-          // Paksa semua tulisan di vipRoles jadi HURUF BESAR
           const vipRolesUpper = vipRoles.map(r => r.toUpperCase());
-
           const names = usersData
             .filter((user: any) => vipRolesUpper.includes((user.Role || "").toString().trim().toUpperCase()))
             .map((user: any) => (user.Nama_RP || "").toString().trim().toUpperCase());
@@ -42,13 +32,9 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
       }
     };
     
-    // Tarik data VIP hanya kalau yang buka ini Bos/SPV (Radar Utama)
     if (!userName) fetchUsers();
   }, [userName]);
 
-  // ==========================================
-  // 2. TARIK DATA RADAR (YANG DI-LOOP)
-  // ==========================================
   const fetchPockets = async () => {
     setIsLoading(true);
     try {
@@ -56,12 +42,9 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
       if (resMutasi.ok) {
         let mutasiData = await resMutasi.json();
 
-        // Mode Staf: Lihat sendiri
         if (userName) {
           mutasiData = mutasiData.filter((p: any) => p.nama === userName);
-        } 
-        // Mode SPV: Sembunyikan VIP
-        else {
+        } else {
           mutasiData = mutasiData.filter((p: any) => {
             const namaStafDiMutasi = (p.nama || "").toString().trim().toUpperCase();
             return !petinggiNames.includes(namaStafDiMutasi);
@@ -77,9 +60,6 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
     }
   };
 
-  // ==========================================
-  // 3. AUTO REFRESH (HEMAT KUOTA 60 DETIK)
-  // ==========================================
   useEffect(() => {
     fetchPockets();
     const interval = setInterval(fetchPockets, 60000); 
@@ -87,24 +67,38 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userName, petinggiNames]);
 
-  // LOGIKA TAMPILAN
+  // ==========================================
+  // 🧠 LOGIKA BARU: GABUNGIN BARANG YANG SAMA
+  // ==========================================
   const groupedPockets = activePockets.reduce((acc: any, curr: any) => {
     if (!acc[curr.nama]) {
-      acc[curr.nama] = { nama: curr.nama, waktu: curr.waktu, items: [] };
+      acc[curr.nama] = { nama: curr.nama, waktu: curr.waktu, itemsMap: {} };
     }
-    acc[curr.nama].items.push({
-      item: curr.item, ambil: curr.ambil, terjual: curr.terjual, sisa: curr.sisa
-    });
+    
+    const itemName = curr.item;
+    
+    if (!acc[curr.nama].itemsMap[itemName]) {
+      acc[curr.nama].itemsMap[itemName] = { item: itemName, ambil: 0, terjual: 0, sisa: 0 };
+    }
+    
+    // Totalin angkanya biar gak dobel kotak
+    acc[curr.nama].itemsMap[itemName].ambil += Number(curr.ambil) || 0;
+    acc[curr.nama].itemsMap[itemName].terjual += Number(curr.terjual) || 0;
+    acc[curr.nama].itemsMap[itemName].sisa += Number(curr.sisa) || 0;
+    
     return acc;
   }, {});
 
-  const displayPockets = Object.values(groupedPockets);
+  // Ubah dari Map ke Array buat ditampilin
+  const displayPockets = Object.values(groupedPockets).map((person: any) => ({
+    ...person,
+    items: Object.values(person.itemsMap)
+  }));
 
   if (userName && displayPockets.length === 0) return null; 
 
   return (
     <div className="bg-cardBg border border-gray-800 rounded-3xl overflow-hidden shadow-2xl mt-8">
-      {/* HEADER RADAR */}
       <div className="p-6 border-b border-gray-800 bg-darkBg/50 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="relative flex h-3 w-3">

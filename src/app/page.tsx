@@ -3,13 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from "next-auth/react";
 
-// --- IMPORT SEMUA KOMPONEN (Pastikan file-file ini sudah ada di folder components) ---
+// --- IMPORT SEMUA KOMPONEN ---
 import { LoadingScreen, LoginScreen, UnauthorizedScreen } from './components/AuthScreens';
 import Header from './components/Header';
 import ActionBar from './components/ActionBar';
-import StatCards from './components/StatCards';
 import Leaderboard from './components/Leaderboard';
-import StockBalance from './components/StockBalance'; // Komponen Audit Baru
+import StockBalance from './components/StockBalance';
 import LogsPanel from './components/LogsPanel';
 import RestockForm from './components/RestockForm';
 import ReimbursePanel from './components/ReimbursePanel';
@@ -18,6 +17,7 @@ import AllModals from './components/AllModals';
 import FinanceAudit from './components/FinanceAudit';
 import PocketMonitor from './components/PocketMonitor';
 import ValuasiGudang from './components/ValuasiGudang';
+import TabbedDashboard from './components/TabbedDashboard'; // <-- WAJIB ADA!
 
 export default function Page() {
   // ==========================================
@@ -158,13 +158,20 @@ export default function Page() {
             time={formatTime(seconds)} 
         />
 
-        {/* --- PANEL ROLE: MANAGEMENT (BOS) --- */}
+        {/* ======================================================= */}
+        {/* --- PANEL ROLE: MANAGEMENT (BOS) -> PAKE TABS BARU! --- */}
+        {/* ======================================================= */}
         {userRole === 'management' && (
           <div className="space-y-8">
             <LogsPanel mgmtStats={mgmtStats} />
             <Leaderboard mgmtStats={mgmtStats} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
-            <FinanceAudit mgmtStats={mgmtStats} inventory={inventory} />
-            <ValuasiGudang inventory={inventory} />
+            
+            {/* INI DIA JURUS TABS-NYA BRE! */}
+            <TabbedDashboard 
+              inventory={inventory} 
+              mgmtStats={mgmtStats} 
+              userName={undefined} 
+            />
             <ReimbursePanel pendingReimbursements={pendingReimbursements} fetchPendingReimbursements={fetchPendingReimbursements} handleReimburseAction={handleReimburseAction} />
           </div>
         )}
@@ -185,8 +192,8 @@ export default function Page() {
           </div>
         )}
 
-        {/* --- PANEL AUDIT STOK (BOS & SPV BISA LIHAT) --- */}
-        {(userRole === 'management' || userRole === 'supervisor') && (
+        {/* --- PANEL AUDIT STOK (SPV BISA LIHAT) --- */}
+        {userRole === 'supervisor' && (
           <div className="space-y-8">
             <PocketMonitor />
             <StockBalance inventory={inventory} mgmtStats={mgmtStats} />
@@ -194,8 +201,11 @@ export default function Page() {
           </div>
         )}
 
-        {/* --- PANEL STAFF (SEMUA BISA LIHAT) --- */}
-        <PocketMonitor userName={userNamaRP} />
+        {/* --- PANEL STAFF (SEMUA BISA LIHAT KECUALI BOS) --- */}
+        {userRole !== 'management' && (
+          <PocketMonitor userName={userNamaRP} />
+        )}
+        
         <StaffPanel 
             isCheckedIn={isCheckedIn} 
             userRole={userRole} 

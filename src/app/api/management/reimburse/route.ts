@@ -14,10 +14,8 @@ async function initSheets() {
 
 // MESIN PENGIRIM DISCORD WEBHOOK (VERSI CCTV)
 const sendDiscordLog = async (title: string, description: string, color: number) => {
-  // Panggil dari .env, ATAU langsung pakai link aslinya (fallback)
   const webhookUrl = process.env.DISCORD_WEBHOOK_REIMBURSE || "https://discordapp.com/api/webhooks/1481264846375878931/3QJ8oQ6QnxHyJWU64PKALEg_LqvJGV_GIGlf7FG9_N_x7WVMU59uFzAEgEWOZedTT6Nq";
   
-  // Penjaganya cukup ngecek: "Apakah kosong?" Gausah ngecek isi link aslinya lagi!
   if (!webhookUrl) {
     console.error("❌ LINK WEBHOOK KOSONG BOS!");
     return;
@@ -118,7 +116,7 @@ export async function POST(req: Request) {
     else if (action === 'acc' || action === 'tolak') {
       const newStatus = action === 'acc' ? 'ACC' : 'TOLAK';
 
-      // 1. Ubah status PENDING
+      // CUKUP UBAH STATUS DI LOG_REIMBURSE SAJA (TIDAK MASUK LOG PENGELUARAN LAGI)
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `Log_Reimburse!F${rowNumber}`, 
@@ -126,15 +124,7 @@ export async function POST(req: Request) {
         requestBody: { values: [[newStatus]] },
       });
 
-      // 2. Kalau di-ACC, otomatis catat ke brankas Log_Pengeluaran
       if (action === 'acc') {
-        await sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: 'Log_Pengeluaran!A:F',
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[waktu, minggu, userName, 'Reimburse', `[Reimburse ACC] ${keterangan}`, jumlah]] },
-        });
-
         // Notif Discord Hijau (ACC)
         await sendDiscordLog(
           "✅ REIMBURSE DI-ACC", 
