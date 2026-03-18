@@ -80,16 +80,20 @@ export default function ActionBar(props: any) {
               <span className="text-sm">📡</span>
               {props.isSending ? 'Mengirim...' : 'Rekap Discord'}
             </button>
-          </>
-        )}
 
-        {/* 🥈 TOMBOL SILVER BONUS */}
+                    {/* 🥈 TOMBOL SILVER BONUS */}
             <button 
               onClick={props.openBonus} 
               className="bg-gray-400/10 border border-gray-400/30 text-gray-300 hover:bg-gray-400/20 px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all flex items-center gap-2"
             >
               <span className="text-sm">🥈</span> Bonus
             </button>
+
+          </>
+          
+        )}
+
+
 
       </div>
     </div>
