@@ -18,6 +18,7 @@ import FinanceAudit from './components/FinanceAudit';
 import PocketMonitor from './components/PocketMonitor';
 import ValuasiGudang from './components/ValuasiGudang';
 import TabbedDashboard from './components/TabbedDashboard';
+import FloatingDetector from './components/FloatingDetector';
 
 export default function Page() {
   // ==========================================
@@ -248,7 +249,7 @@ const [selectedWeek, setSelectedWeek] = useState(() => {
           <div className="space-y-8">
             <LogsPanel mgmtStats={mgmtStats} />
             <Leaderboard mgmtStats={mgmtStats} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
-            
+            <FloatingDetector mgmtStats={mgmtStats} inventory={inventory} />
             {/* INI DIA JURUS TABS-NYA BRE! */}
             <TabbedDashboard 
               inventory={inventory} 
