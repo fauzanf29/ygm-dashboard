@@ -4,7 +4,7 @@ export default function Header({ userRole, userNamaRP, vault, image }: any) {
   return (
     <header className="flex justify-between items-center p-6 border-b border-gray-800 bg-cardBg sticky top-0 z-40">
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-black italic tracking-wider">Y Luxury<span className="text-burgundy">Club</span></h1>
+        <h1 className="text-xl font-black italic tracking-wider">YGM<span className="text-burgundy">Center</span></h1>
         {userRole === 'management' && <p className="text-[10px] text-green-500 font-bold uppercase mt-1">Vault: $ {vault?.toLocaleString('id-ID') || 0}</p>}
       </div>
       <div className="flex items-center gap-6">

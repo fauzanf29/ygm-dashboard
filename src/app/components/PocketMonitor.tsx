@@ -106,7 +106,7 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
             <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
           </div>
           <h3 className="font-black italic uppercase tracking-widest text-sm text-red-500">
-            {userName ? '🎒 BARANG DI KANTONG PRIBADI' : '🚨 LIVE POCKET RADAR'}
+            {userName ? '🎒 BARANG DI BRANGKAS PRIBADI' : '🚨 PRIVATE STORAGE RADAR'}
           </h3>
         </div>
         <button 
