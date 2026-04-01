@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     const sheets = await initSheets();
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
 
-    // 1. Cek Harga Jual & Harga Modal
+    // 1. Cek Harga Jual SAJA (Harga Modal dihapus)
     const invRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Inventory!A:F',
@@ -27,21 +27,17 @@ export async function POST(req: Request) {
     const rows = invRes.data.values || [];
     
     let hargaSatuan = 0;
-    let hargaModalSatuan = 0;
 
     for (let i = 0; i < rows.length; i++) {
       if (rows[i][0] === itemName) {
         hargaSatuan = parseInt(rows[i][4]?.toString().replace(/[^0-9]/g, "")) || 0;
-        hargaModalSatuan = parseInt(rows[i][5]?.toString().replace(/[^0-9]/g, "")) || 0;
         break;
       }
     }
 
     if (hargaSatuan === 0) return NextResponse.json({ error: "Harga jual belum disetting di Kolom E!" }, { status: 400 });
-    if (hargaModalSatuan === 0) return NextResponse.json({ error: "Harga modal belum disetting di Kolom F!" }, { status: 400 });
 
     const totalHarga = hargaSatuan * qty;
-    const totalModal = hargaModalSatuan * qty;
     
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
     const timeStr = now.toLocaleString('id-ID');
@@ -52,28 +48,25 @@ export async function POST(req: Request) {
     const weekNumber = Math.floor(diffInDays / 7) + 1;
     const weekStr = `Minggu ${weekNumber > 0 ? weekNumber : 1}`;
 
-    // 2. Catat ke Log_Penjualan
+    // 2. Catat ke Log_Penjualan (Hanya 6 Kolom, Kolom Modal Dihilangkan)
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Log_Penjualan!A:G',
+      range: 'Log_Penjualan!A:F',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [[timeStr, weekStr, userName, itemName, qty, totalHarga, totalModal]],
+        values: [[timeStr, weekStr, userName, itemName, qty, totalHarga]],
       },
     });
 
-    // ==========================================
     // 3. JURUS POTONG BERANTAI (Mutasi_Stok)
-    // ==========================================
     const mutasiRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Mutasi_Stok!A2:H' });
     const mutasiRows = mutasiRes.data.values || [];
 
-    let remainingDeduct = qty; // Sisa botol yang harus dipotong dari kantong
+    let remainingDeduct = qty; 
     const updates = [];
 
-    // Cari histori dari baris atas (lama) ke bawah (baru) - FIFO System
     for (let i = 0; i < mutasiRows.length; i++) {
-      if (remainingDeduct <= 0) break; // Kalau udah lunas kepotong semua, stop nyari.
+      if (remainingDeduct <= 0) break; 
 
       const row = mutasiRows[i];
       if (row[2] === userName && row[3] === itemName && row[7] === "Keliling") {
@@ -81,25 +74,21 @@ export async function POST(req: Request) {
         let currentSisa = parseInt(row[6]?.toString().replace(/[^0-9]/g, "")) || 0;
 
         if (currentSisa > 0) {
-          // Potong sesuai sisa botol di baris itu
           let potong = Math.min(currentSisa, remainingDeduct);
           let newTerjual = currentTerjual + potong;
           let newSisa = currentSisa - potong;
           let newStatus = newSisa === 0 ? "Selesai" : "Keliling";
 
-          // Simpan instruksi perubahannya
           updates.push({
             range: `Mutasi_Stok!F${i + 2}:H${i + 2}`,
             values: [[newTerjual, newSisa, newStatus]]
           });
 
-          // Kurangi total utang botol yang lagi dicari
           remainingDeduct -= potong;
         }
       }
     }
 
-    // Eksekusi semua potongan secara massal (Batch Update) biar cepet & hemat kuota
     if (updates.length > 0) {
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,

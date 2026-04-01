@@ -121,8 +121,7 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
       <div className="p-6">
         {displayPockets.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">✅ Semua Kantong Staf Kosong</p>
-            <p className="text-[10px] text-gray-600 mt-1">Tidak ada staf yang beredar membawa barang klub.</p>
+            <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">✅ Semua brangkas Staf Kosong</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -135,7 +134,7 @@ export default function PocketMonitor({ userName }: PocketMonitorProps) {
                     <h4 className="font-black text-red-400 uppercase text-base tracking-wide">{person.nama}</h4>
                     <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Waktu: {person.waktu}</p>
                   </div>
-                  <span className="bg-red-950 text-red-400 border border-red-800/50 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest">Keliling</span>
+            
                 </div>
                 
                 <div className="relative z-10 space-y-2 flex-grow">
