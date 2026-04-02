@@ -108,7 +108,7 @@ export default function StaffPanel(props: any) {
       {/* ========================================== */}
       <div className="bg-[#0a0a0a] border border-gray-800/60 rounded-3xl p-8 shadow-2xl flex flex-col h-full">
         <h3 className="text-xs text-gray-300 font-black mb-8 uppercase tracking-[0.2em] border-l-2 border-yellow-600 pl-4 py-1">
-          Kasir Analytics
+          My Weekly Report
         </h3>
         
         <div className="grid grid-cols-2 gap-4 mb-8">
